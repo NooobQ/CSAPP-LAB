@@ -230,7 +230,10 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-	return 2;
+	int f = (x^y) >> 31;
+	int p = (y + 1 + (~x)) >> 31;
+	y = y >> 31;
+	return (!p & !f) | (f & !y);
 }
 //4
 /*
@@ -242,7 +245,13 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4
  */
 int logicalNeg(int x) {
-	return 2;
+	x = ~x;
+	x = (x >> 16)&x;
+	x = (x >> 8)&x;
+	x = (x >> 4)&x;
+	x = (x >> 2)&x;
+	x = (x >> 1)&x;
+	return x & 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
