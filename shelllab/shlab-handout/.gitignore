@@ -1,2 +1,8 @@
-tsh
-tshref
+./Makefile
+./myint
+./myspin
+./mysplit
+./mystop
+./tsh
+./tshref
+./tshref.out
