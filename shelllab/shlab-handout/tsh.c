@@ -166,16 +166,38 @@ int main(int argc, char **argv)
 void eval(char *cmdline) 
 {
     //TO-DO:Create Jobs & fork it 
-    char** argv = (char **)malloc(MAXARGS*sizeof(char*));
-    int bgflag = parseline(cmdline, argv);
-    if(bgflag)
-        printf("BGFLag = true\n");
-    if(!builtin_cmd(argv)){
-        printf("Fork here\n");
-        // fork()
-    }
+    char *argv[MAXARGS];
+    char buf[MAXLINE];
+    int bgflag;
+    int childPid;
+    int state;
 
-    free(argv);
+    strcpy(buf, cmdline);
+    bgflag = parseline(cmdline, argv);
+    if(argv[0] == NULL)
+        return;
+
+    //Fork a job
+    fflush(stdout);
+    if(!builtin_cmd(argv)){
+        if((childPid = fork())==0){
+            if(execve(argv[0], argv, environ) < 0){
+                printf("%s: Command not Found.\n", argv[0]);
+                exit(0);
+            }
+        }
+        else{
+            state = bgflag + 1;
+            int jid = addjob(jobs, childPid, state, buf);
+            if(!bgflag){
+                waitfg(childPid);
+            }
+            else{
+                printf("[%d] (%d) %s", jid, childPid, buf);
+            }
+        }
+        //Set Group ID
+    }
     return;
 }
 
@@ -248,9 +270,11 @@ int builtin_cmd(char **argv)
         exit(0);
     if(!strcmp(argv[0], "fg") || !strcmp(argv[0], "bg")){
         do_bgfg(argv);
+        return 1;
     }
     if(!strcmp(argv[0], "jobs")){
         listjobs(jobs);
+        return 1;
     }
     return 0;     /* not a builtin command */
 }
@@ -260,6 +284,13 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    // int jid = getjobjid();
+    // if(!strcmp(argv[0], "fg")){
+        
+    // }
+    // if(!strcmp(argv[0], "bg")){
+
+    // }
     return;
 }
 
@@ -268,6 +299,9 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    int status;
+    if(waitpid(pid, &status, 0) < 0)
+        unix_error("waitfg: waitpid error");
     return;
 }
 
