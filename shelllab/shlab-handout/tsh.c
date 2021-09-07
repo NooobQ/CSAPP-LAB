@@ -191,7 +191,8 @@ void eval(char *cmdline)
             unix_error("sigpromask error");
         if((childPid = fork())==0){
             //Set process group id if job state is BG
-            if(bgflag)
+            //Question: uncomment this can lead to tsh to be zoombie process when SIGTSTP is sent to child process.
+            // if(bgflag)
                 setpgid(0, 0);
             //Restore signal mask
             sigprocmask(SIG_SETMASK, &prev_mask, NULL);
@@ -300,6 +301,23 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    struct job_t *job;
+    int jid;
+
+    //Check if jid exist?
+    jid = atoi(argv[1] + 1);
+    if((job = getjobjid(jobs, jid)) ==NULL){
+        printf("%%%d: No such job\n", jid);
+        return;
+    }
+    if(!strcmp(argv[0],"bg")){
+        //Check state is ST?
+    }
+    else{
+        printf("FG!\n");
+        //Check state is ST or BG?
+
+    }
     // int jid = getjobjid();
     // if(!strcmp(argv[0], "fg")){
         
@@ -338,32 +356,41 @@ void sigchld_handler(int sig)
 {
     //TO-DO
     int olderrno = errno;
-    printf("sigchld handler started.\n");
+    // printf("sigchld handler started.\n");
     pid_t pid;
     struct job_t *job;
     int status;
+
     while((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0){ //stuck in here 
+        job = getjobpid(jobs, pid);
         //Reap terminated jobs
         if(WIFEXITED(status) || WIFSIGNALED(status)){
-            printf("exited Job (%d) removed from list.\n", pid);
+            if(WIFSIGNALED(status)){
+                //Signal 2: SIGINT
+                printf("Job [%d] (%d) terminated by signal 2\n", job->jid, job->pid);
+            }
+            // else{
+            //     printf("Job [%d] (%d) terminated normally.\n", job->jid, job->pid);
+            // }
             deletejob(jobs, pid);
             continue;
         }
         if(WIFSTOPPED(status)){
-            printf("Job (%d) status change to stopped.\n", pid);
+            // printf("Job (%d) status change to stopped.\n", pid);
+            //SIGTSTP:signal 20
+            printf("Job [%d] (%d) stopped by signal 20.\n", job->jid, job->pid);
+            job->state = ST;
             continue;
         }
         if(WIFCONTINUED(status)){
             //CONTINUE A JOB
             //TO-DO:
-            printf("Job (%d) continue to work.\n", pid);
-            job = getjobpid(jobs, pid);
-            job -> state = BG;
+            printf("Job (%d) continue to work.\n", job->pid);
+            job -> state = UNDEF;
             continue;
         }
     }
-    printf("Errorno:%d.\n", errno);
-    sleep(1);
+    // printf("Errorno:%d.\n", errno);
     //Post-procedure
     errno = olderrno;
     return;
@@ -377,16 +404,15 @@ void sigchld_handler(int sig)
 void sigint_handler(int sig) 
 {
     //Search the foreground job
-    int pid, jid;
+    int pid;
+    // int jid;
     if((pid = fgpid(jobs))==0)
         return;
-    jid = pid2jid(pid);
+    // jid = pid2jid(pid);
     //Send signal SIGINT
-    if(kill(pid, sig)<0)
+    if(kill(-pid, sig)<0)
         unix_error("signal error");
-    printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, sig);//should be moved to another place
     //Post-procedure
-    deletejob(jobs, pid);
     return;
 }
 
@@ -398,17 +424,18 @@ void sigint_handler(int sig)
 void sigtstp_handler(int sig) 
 {
     //Search the foreground job
-    printf("Signal SIGTSTP sent.\n");
+    // printf("Signal SIGTSTP sent.\n");
     int pid;
     if((pid = fgpid(jobs)) == 0){
-        printf("FG not RUNNIG.\n");
+        // printf("FG not RUNNIG.\n");
         return;
     }
-    if(kill(pid, sig)<0)
+    if(kill(-pid, sig)<0)
         unix_error("signal error");
-    printf("Job [%d] (%d) stopped by signal %d.\n", pid2jid(pid), pid, sig );
-    struct job_t * job = getjobpid(jobs, pid);
-    job->state = ST;
+    //TO-DO make PRINTF async-safe and move to SIGCHLD handler
+    // printf("Job [%d] (%d) stopped by signal %d.\n", pid2jid(pid), pid, sig );
+    // struct job_t * job = getjobpid(jobs, pid);
+    // job->state = ST;
     return;
 }
 
