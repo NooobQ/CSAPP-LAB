@@ -165,12 +165,18 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
-    //TO-DO:Create Jobs & fork it 
+    //Create Jobs & fork it 
+
+    //variable defination
     char *argv[MAXARGS];
     char buf[MAXLINE];
     int bgflag;
     int childPid;
     int state;
+    sigset_t mask,prev_mask;
+
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
 
     strcpy(buf, cmdline);
     bgflag = parseline(cmdline, argv);
@@ -180,23 +186,35 @@ void eval(char *cmdline)
     //Fork a job
     fflush(stdout);
     if(!builtin_cmd(argv)){
+        //Block the signal SIGCHLD with sigprocmask()
+        if(sigprocmask(SIG_BLOCK, &mask, &prev_mask) < 0)
+            unix_error("sigpromask error");
         if((childPid = fork())==0){
+            //Set process group id if job state is BG
+            if(bgflag)
+                setpgid(0, 0);
+            //Restore signal mask
+            sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             if(execve(argv[0], argv, environ) < 0){
                 printf("%s: Command not Found.\n", argv[0]);
                 exit(0);
             }
         }
-        else{
-            state = bgflag + 1;
-            int jid = addjob(jobs, childPid, state, buf);
+        else{ 
+            state = bgflag + 1 ;//BG --- 2 , FG --- 1 
+            if(addjob(jobs, childPid, state, buf) == 0){//addjob -- concurrent problem
+                return ;
+            }
+            //Restore signal mask
+            sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             if(!bgflag){
+                //FG Jobs
                 waitfg(childPid);
             }
             else{
-                printf("[%d] (%d) %s", jid, childPid, buf);
+                printf("[%d] (%d) %s" ,pid2jid(childPid) ,childPid , buf);
             }
         }
-        //Set Group ID
     }
     return;
 }
@@ -264,8 +282,6 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
-    if(argv[0] == NULL)
-        return 0;
     if(!strcmp(argv[0], "quit"))
         exit(0);
     if(!strcmp(argv[0], "fg") || !strcmp(argv[0], "bg")){
@@ -299,9 +315,11 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    int status;
-    if(waitpid(pid, &status, 0) < 0)
-        unix_error("waitfg: waitpid error");
+    struct job_t *job = getjobpid(jobs, pid);
+    while(job->pid == pid && job->state == FG){
+        // printf("zzz.\n");
+        sleep(1);
+    }
     return;
 }
 
@@ -318,6 +336,36 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    //TO-DO
+    int olderrno = errno;
+    printf("sigchld handler started.\n");
+    pid_t pid;
+    struct job_t *job;
+    int status;
+    while((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0){ //stuck in here 
+        //Reap terminated jobs
+        if(WIFEXITED(status) || WIFSIGNALED(status)){
+            printf("exited Job (%d) removed from list.\n", pid);
+            deletejob(jobs, pid);
+            continue;
+        }
+        if(WIFSTOPPED(status)){
+            printf("Job (%d) status change to stopped.\n", pid);
+            continue;
+        }
+        if(WIFCONTINUED(status)){
+            //CONTINUE A JOB
+            //TO-DO:
+            printf("Job (%d) continue to work.\n", pid);
+            job = getjobpid(jobs, pid);
+            job -> state = BG;
+            continue;
+        }
+    }
+    printf("Errorno:%d.\n", errno);
+    sleep(1);
+    //Post-procedure
+    errno = olderrno;
     return;
 }
 
@@ -328,6 +376,17 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    //Search the foreground job
+    int pid, jid;
+    if((pid = fgpid(jobs))==0)
+        return;
+    jid = pid2jid(pid);
+    //Send signal SIGINT
+    if(kill(pid, sig)<0)
+        unix_error("signal error");
+    printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, sig);//should be moved to another place
+    //Post-procedure
+    deletejob(jobs, pid);
     return;
 }
 
@@ -338,6 +397,18 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    //Search the foreground job
+    printf("Signal SIGTSTP sent.\n");
+    int pid;
+    if((pid = fgpid(jobs)) == 0){
+        printf("FG not RUNNIG.\n");
+        return;
+    }
+    if(kill(pid, sig)<0)
+        unix_error("signal error");
+    printf("Job [%d] (%d) stopped by signal %d.\n", pid2jid(pid), pid, sig );
+    struct job_t * job = getjobpid(jobs, pid);
+    job->state = ST;
     return;
 }
 
