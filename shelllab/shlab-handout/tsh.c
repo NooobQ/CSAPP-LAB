@@ -302,29 +302,45 @@ int builtin_cmd(char **argv)
 void do_bgfg(char **argv) 
 {
     struct job_t *job;
-    int jid;
+    int jid = 0;
+    int pid = 0;
 
-    //Check if jid exist?
-    jid = atoi(argv[1] + 1);
-    if((job = getjobjid(jobs, jid)) ==NULL){
-        printf("%%%d: No such job\n", jid);
-        return;
-    }
-    if(!strcmp(argv[0],"bg")){
-        //Check state is ST?
+    //check arg is jid / pid
+    if(argv[1][0]=='%'){
+        jid = atoi(argv[1] + 1);
+        if((job = getjobjid(jobs, jid)) == NULL){
+            printf("%s: No such job\n", argv[1]);
+            return;
+        }
     }
     else{
-        printf("FG!\n");
-        //Check state is ST or BG?
-
+        pid = atoi(argv[1]);
+        if(pid == 0){
+            printf("fg command requires PID or %%jobid argument");
+            return ;
+        }
+        if((job = getjobpid(jobs, pid)) == NULL){
+            printf("(%d): No such process\n", pid);
+            return;
+        }
     }
-    // int jid = getjobjid();
-    // if(!strcmp(argv[0], "fg")){
-        
-    // }
-    // if(!strcmp(argv[0], "bg")){
+    //Check if jid/pid exist?
 
-    // }
+    //bg built-in
+    if(!strcmp(argv[0], "bg")){
+        if(job->state == ST){
+            job->state = BG;
+            kill(-pid, SIGCONT);
+        }
+        //Check state is ST?
+    }
+    //fg built-in
+    else{
+        //TO-DO:Check state is ST or BG?
+        job->state = FG;
+        kill(-pid, SIGCONT);
+        waitfg(pid);
+    }
     return;
 }
 
@@ -386,7 +402,7 @@ void sigchld_handler(int sig)
             //CONTINUE A JOB
             //TO-DO:
             printf("Job (%d) continue to work.\n", job->pid);
-            job -> state = UNDEF;
+            // job -> state = UNDEF;
             continue;
         }
     }
