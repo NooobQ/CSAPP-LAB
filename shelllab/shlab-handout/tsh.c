@@ -319,7 +319,16 @@ void do_bgfg(char **argv)
 
     sigemptyset(&mask);
     sigaddset(&mask, SIGCHLD);
+
     //check arg is jid / pid
+    if(argv[1] == NULL){
+        printf("%s command requires PID or %%jobid argument\n", argv[0]);
+        return;
+    }
+    if(argv[1][0]!='%' && !isdigit(argv[1][0])){
+        printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+        return ;
+    }
     if(argv[1][0]=='%'){
         jid = atoi(argv[1] + 1);
         if((job = getjobjid(jobs, jid)) == NULL){
@@ -330,10 +339,6 @@ void do_bgfg(char **argv)
     }
     else{
         pid = atoi(argv[1]);
-        if(pid == 0){
-            printf("fg command requires PID or %%jobid argument");
-            return ;
-        }
         if((job = getjobpid(jobs, pid)) == NULL){
             printf("(%d): No such process\n", pid);
             return;
@@ -348,6 +353,7 @@ void do_bgfg(char **argv)
 
     //bg built-in
     if(!strcmp(argv[0], "bg")){
+        printf("[%d] (%d) %s" ,job->jid ,job->pid , job->cmdline);
         if(job->state == ST){
             job->state = BG;
             kill(-pid, SIGCONT);
