@@ -29,6 +29,10 @@ int main(int argc, char **argv)
 	clientlen = sizeof(struct sockaddr_storage); 
 	connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
 	if (Fork() == 0) { 
+		//File descriptor NOT SHARED, Need to close properly in each process.
+		//In Child the listenfd must close listenfd first to avoid issues.
+		//In Parent each connfd must close listenfd after the STREAM CLOSE
+		//, to make sure that file descriptor not leak.
 	    Close(listenfd); /* Child closes its listening socket */
 	    echo(connfd);    /* Child services client */ //line:conc:echoserverp:echofun
 	    Close(connfd);   /* Child closes connection with client */ //line:conc:echoserverp:childclose
