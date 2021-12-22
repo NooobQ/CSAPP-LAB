@@ -1,4 +1,3 @@
-./Makefile
 ./myint
 ./myspin
 ./mysplit
@@ -6,3 +5,4 @@
 ./tsh
 ./tshref
 ./tshref.out
+./*.o

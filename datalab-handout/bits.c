@@ -266,6 +266,11 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
+	int ans = (x >> 31) & 1;
+	int max_int = (0x7f << 24) + (0xff << 16) + (0xff << 8) + 0xff;
+	x = max_int & x;
+	
+
 	return 0;
 }
 //float
