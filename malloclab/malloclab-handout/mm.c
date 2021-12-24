@@ -100,7 +100,7 @@ int mm_init(void)
 
     if(extend_heap(CHUNKSIZE/WSIZE) == NULL)
         return -1;
-    // printf()
+    // //printf()
     return 0;
 }
 
@@ -225,12 +225,12 @@ static void *coalesce(void *bp){
 //Not first fit but best fit in o(n)
 static void *find_fit(size_t asize){
     char *cur = heap_listp;
-    printf("heap_listp address = 0x%x\n", heap_listp);
+    //printf("heap_listp address = 0x%x\n", heap_listp);
     char *ans = NULL;
     int prevsize = 0x7fffffff;
     while(GET_SIZE(HDRP(cur)) != 0){
         //unallocated and larger than asize's memory
-        printf("cur header stored data is = 0x%x\n", *((int *) (HDRP(cur))));
+        //printf("cur header stored data is = 0x%x\n", *((int *) (HDRP(cur))));
         if(GET_ALLOC(HDRP(cur)) == 0 && GET_SIZE(HDRP(cur)) >= asize){
             if(ans == NULL || GET_SIZE(HDRP(cur)) < prevsize){
                 ans = cur;
@@ -239,18 +239,18 @@ static void *find_fit(size_t asize){
         }
         cur = NEXT_BLKP(cur);
     }
-    printf("return fit address is = 0x%x\n", (int)ans);
+    //printf("return fit address is = 0x%x\n", (int)ans);
     return ans;
 }
 
 //Split block and place
 static void place(void *bp, size_t asize){
-    printf("bp address = 0x%x, asize=%d\n", (int)bp, asize);
+    //printf("bp address = 0x%x, asize=%d\n", (int)bp, asize);
     int total_size = GET_SIZE(HDRP(bp));
     int prev_size = asize;
     //space header,footer lost?
     int succ_size = total_size - asize ;
-    printf("spliting %d into %d and %d\n", total_size, asize, succ_size);
+    //printf("spliting %d into %d and %d\n", total_size, asize, succ_size);
     char *succ_ptr;
 
     PUT(HDRP(bp), PACK(prev_size, 1));
@@ -259,7 +259,7 @@ static void place(void *bp, size_t asize){
     //size bigger split it into two parts
     if(succ_size > 0){
         succ_ptr = NEXT_BLKP(bp);
-        printf("succ_ptr address : %x\n", (int)succ_ptr);
+        //printf("succ_ptr address : %x\n", (int)succ_ptr);
         PUT(HDRP(succ_ptr), PACK(succ_size, 0));
         PUT(FTRP(succ_ptr), PACK(succ_size, 0));
     }
