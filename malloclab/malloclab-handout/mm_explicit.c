@@ -75,6 +75,7 @@ team_t team = {
 // #define FTRP(bp) ((char*)(bp + SIZE_T_SIZE))
 
 static char *heap_listp;
+static char *free_listp;
 
 
 static void *extend_heap(size_t words);
@@ -117,7 +118,6 @@ void *mm_malloc(size_t size)
     if(size == 0)
         return NULL;
 
-    //here add the header size DSIZE
     asize = ALIGN(size + DSIZE);
 
     if((bp = find_fit(asize)) != NULL){
@@ -158,47 +158,17 @@ void mm_free(void *bp)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    if(size == 0){
-        mm_free(ptr);
-        return NULL;
-    }
-    if(ptr == NULL)
-        return mm_malloc(size);
 
-
-    // if(size_diff <= 0)
-    //     return ptr;
-
-    size_t size_diff = size - GET_SIZE(HDRP(ptr));
     void *oldptr = ptr;
     void *newptr;
-    size_t copySize, new_size;
-
-    copySize = GET_SIZE(HDRP(oldptr)) - DSIZE;
-    // copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    // printf("CopySize = %d is it equal to %d\n", copySize, GET_SIZE(HDRP(oldptr)) - DSIZE);
-    if (size < copySize)
-        copySize = size;
+    size_t copySize;
     
-    //merge with previous free block
-    //change the previous header & current footer
-    // if(!GET_ALLOC(HDRP(PREV_BLKP(ptr))) && 
-    //     GET_SIZE(HDRP(PREV_BLKP(ptr))) >= size_diff){
-    //     newptr = PREV_BLKP(ptr);
-    //     new_size = GET_SIZE(HDRP(PREV_BLKP(ptr))) + GET_SIZE(HDRP(ptr));
-    //     PUT(HDRP(PREV_BLKP(ptr)), PACK(new_size, 1));
-    //     PUT(FTRP(ptr), PACK(new_size, 1));
-    //     memcpy(newptr, oldptr, copySize);
-    //     return newptr;
-    // }
-
-    // if(!GET_ALLOC(NEXT_BLKP(ptr)) && GET_SIZE(NEXT_BLKP(ptr)) >= size_diff){
-
-    // }
-
     newptr = mm_malloc(size);
     if (newptr == NULL)
       return NULL;
+    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+    if (size < copySize)
+      copySize = size;
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
