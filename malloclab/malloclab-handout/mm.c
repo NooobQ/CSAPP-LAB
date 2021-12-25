@@ -93,7 +93,9 @@ int mm_init(void)
         return -1;
     
     PUT(heap_listp, 0);
+    //First empty header 
     PUT(heap_listp + WSIZE, PACK(DSIZE, 1));
+    //First empty Footer : heap_listp point to here
     PUT(heap_listp + (2* WSIZE), PACK(DSIZE, 1));
     PUT(heap_listp + (3 * WSIZE), PACK(0, 1));
     heap_listp += (2 * WSIZE);
@@ -156,6 +158,7 @@ void mm_free(void *bp)
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
+ //TODO: reimplement the realloc
 void *mm_realloc(void *ptr, size_t size)
 {
     if(size == 0){

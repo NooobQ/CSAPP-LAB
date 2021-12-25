@@ -73,6 +73,8 @@ team_t team = {
 
 // #define HDRP(bp) ((char*)(bp - 4))
 // #define FTRP(bp) ((char*)(bp + SIZE_T_SIZE))
+#define FREE 0
+#define ALLOCATED 1
 
 static char *heap_listp;
 static char *free_listp;
@@ -83,6 +85,7 @@ static void *coalesce(void *bp);
 static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
 
+static void *get_last_free();
 
 /* 
  * mm_init - initialize the malloc package.
@@ -93,11 +96,14 @@ int mm_init(void)
     if((heap_listp = mem_sbrk(4 * WSIZE)) == (void *) -1)
         return -1;
     
+    //TO-DO modify to contains a free_listp? or put it to here?
     PUT(heap_listp, 0);
+    //2 Block of PACK(8|1)
     PUT(heap_listp + WSIZE, PACK(DSIZE, 1));
     PUT(heap_listp + (2* WSIZE), PACK(DSIZE, 1));
     PUT(heap_listp + (3 * WSIZE), PACK(0, 1));
     heap_listp += (2 * WSIZE);
+    free_listp = heap_listp;
 
     if(extend_heap(CHUNKSIZE/WSIZE) == NULL)
         return -1;
@@ -144,6 +150,7 @@ void *mm_malloc(size_t size)
 /*
  * mm_free - Freeing a block does nothing.
  */
+ //TODO: HOW TO INSERT IT TO FREE LIST?
 void mm_free(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
@@ -176,13 +183,14 @@ void *mm_realloc(void *ptr, size_t size)
 
 //first implementation: implicit free linked list with boundary coalesce
 static void *extend_heap(size_t words){
-    char *bp;
+    char *bp, *last_free;
     size_t size;
 
     //can be replace by ALIGN(size)
     size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE;
     if((long)(bp = mem_sbrk(size)) == -1)
         return NULL;
+    last_free = get_last_free();
     
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
@@ -191,6 +199,7 @@ static void *extend_heap(size_t words){
     return coalesce(bp);
 }
 
+//TODO: rebuild and MOD free list
 static void *coalesce(void *bp){
     //space coalesce gain?
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
@@ -224,6 +233,7 @@ static void *coalesce(void *bp){
 }
 
 //Not first fit but best fit in o(n)
+//TODO: traverse from free_listp
 static void *find_fit(size_t asize){
     char *cur = heap_listp;
     //printf("heap_listp address = 0x%x\n", heap_listp);
@@ -269,6 +279,29 @@ static void place(void *bp, size_t asize){
     return ;
 }
 
+static void *get_last_free(){
+    void *cur = free_listp;
+    while(*cur!=NULL){
+        cur = *(cur + WSIZE);
+    }
+    return cur;
+}
+
+static void *get_prev_FB(char *bp){
+    if(GET_ALLOC(HDRP(bp)) == ALLOCATED){
+        printf("Request invalid.\n");
+        return NULL;
+    }
+    return bp;
+}
+
+static void *get_next_FB(char *bp){
+    if(GET_ALLOC(HDRP(bp)) == ALLOCATED){
+        printf("Request invalid.\n");
+        return NULL;
+    }
+    return (char *)(bp + WSIZE);
+}
 
 
 
