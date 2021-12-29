@@ -85,11 +85,11 @@ static void *coalesce(void *bp);
 static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
 
-static void *get_last_FB();
+// static void *get_last_FB();
 static void *get_prev_FB(char *bp);
 static void *get_next_FB(char *bp);
-static void remove_block(char *bp);
-static void insert_block(char *bp);
+static void dequeue_block(char *bp);
+static void enqueue_block(char *bp);
 
 /* 
  * mm_init - initialize the malloc package.
@@ -146,20 +146,11 @@ void *mm_malloc(size_t size)
     place(bp, asize);
     return bp;
     
-    // int newsize = ALIGN(size + SIZE_T_SIZE);
-    // void *p = mem_sbrk(newsize);
-    // if (p == (void *)-1)
-	// return NULL;
-    // else {
-    //     *(size_t *)p = size;
-    //     return (void *)((char *)p + SIZE_T_SIZE);
-    // }
 }
 
 /*
  * mm_free - Freeing a block does nothing.
  */
- //TODO: HOW TO INSERT IT TO FREE LIST?
 void mm_free(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
@@ -174,17 +165,30 @@ void mm_free(void *bp)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+    if(size == 0){
+        mm_free(ptr);
+        return NULL;
+    }
+    if(ptr == NULL)
+        return mm_malloc(size);
 
+
+    // if(size_diff <= 0)
+    //     return ptr;
+
+    size_t size_diff = size - GET_SIZE(HDRP(ptr));
     void *oldptr = ptr;
     void *newptr;
-    size_t copySize;
-    
+    size_t copySize, new_size;
+
+    copySize = GET_SIZE(HDRP(oldptr)) - DSIZE;
+    // copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+    // printf("CopySize = %d is it equal to %d\n", copySize, GET_SIZE(HDRP(oldptr)) - DSIZE);
+    if (size < copySize)
+        copySize = size;
     newptr = mm_malloc(size);
     if (newptr == NULL)
       return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    if (size < copySize)
-      copySize = size;
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
@@ -211,38 +215,43 @@ static void *extend_heap(size_t words){
 //TODO: rebuild and MOD free list
 static void *coalesce(void *bp){
     //space coalesce gain?
+    //printf("INFO: COALESCE of 0x%x begin.\n", bp);
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc=GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size=GET_SIZE(HDRP(bp));
 
     //TO-DO : insert linked_list base on cases.
-    if(prev_alloc && next_alloc){           /* Case 1 */
-        insert_block(bp);
-        return bp;
+    if(prev_alloc && next_alloc){           /* Case 1  prev & next all allocated. */
+        enqueue_block(bp);
+        // return bp;
     }
 
-    else if (prev_alloc && !next_alloc){    /* Case 2 */
+    else if (prev_alloc && !next_alloc){    /* Case 2 merge with next block. */
+        dequeue_block(NEXT_BLKP(bp));
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp),PACK(size,0));
         PUT(FTRP(bp),PACK(size,0));
-        remove_block(NEXT_BLKP(bp));
-        insert_block(bp);
+        //BUG.pointer disappear
+        enqueue_block(bp);
     }
-    else if (!prev_alloc && next_alloc){    /* Case 3 */
+    else if (!prev_alloc && next_alloc){    /* Case 3 merge with prev block. */
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         PUT(FTRP(bp),PACK(size,0));
         bp = PREV_BLKP(bp);
     }
-    else{                                 /* Case 4 */
+    else{                                 /* Case 4 merge with both block. */
+        dequeue_block(NEXT_BLKP(bp));
+        dequeue_block(PREV_BLKP(bp));
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + 
             GET_SIZE(FTRP(NEXT_BLKP(bp)));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
         bp = PREV_BLKP(bp);
-        remove_block(NEXT_BLKP(bp));
+        enqueue_block(bp);
     }
 
+    //printf("INFO: COALESCE end.\n");
     return bp;
 }
 
@@ -250,75 +259,71 @@ static void *coalesce(void *bp){
 //TODO: traverse from free_listp
 static void *find_fit(size_t asize){
     int *cur = GET(free_listp);
-    printf("original free_listp:0x%x\n", cur);
+    //printf("INFO: func find_fit:original free_listp:0x%x\n", cur);
     char *ans = NULL;
     int prevsize = 0x7fffffff;
     while(cur !=NULL && GET_SIZE(HDRP(cur)) != 0){
         //unallocated and larger than asize's memory
-        if(GET_SIZE(HDRP(cur))< asize)
-            printf("ERROR:cur block data is = 0x%x, SMALLER THAN 0x%x\n", *((int *) (HDRP(cur))), asize);
-        if(GET_ALLOC(HDRP(cur)) == 0 && GET_SIZE(HDRP(cur)) >= asize){
-            printf("INFO: Find One block fit.\n");
+        if(GET_ALLOC(HDRP(cur)) != FREE){
+            printf("ERROR: cur block not free\n");
+        }
+        if(GET_SIZE(HDRP(cur)) >= asize){
+            //printf("INFO: Find One block fit.\n");
             if(ans == NULL || GET_SIZE(HDRP(cur)) < prevsize){
                 ans = cur;
                 prevsize = GET_SIZE(HDRP(cur));
             }
         }
-        printf("cur address : 0x%x\n", cur);
+        // //printf("cur address : 0x%x\n", cur);
         cur = GET(cur);
     }
-    printf("return fit address is = 0x%x\n", (int)ans);
     return ans;
 }
 
 //Split block and place
 //TO-DO: Rewrite it
 static void place(void *bp, size_t asize){
-    //printf("bp address = 0x%x, asize=%d\n", (int)bp, asize);
+    ////printf("bp address = 0x%x, asize=%d\n", (int)bp, asize);
+    //printf("INFO: placing 0x%x with %d bytes.\n", bp, asize);
     int total_size = GET_SIZE(HDRP(bp));
     int prev_size = asize;
     //space header,footer lost?
     int succ_size = total_size - asize ;
-    //printf("spliting %d into %d and %d\n", total_size, asize, succ_size);
-    int *succ_ptr;
-    int *prev_FB = get_prev_FB(bp);
-    int *next_FB = get_next_FB(bp);
+    char *succ_ptr;
 
+    if(succ_size <= DSIZE){
+        succ_size = 0;
+        prev_size = total_size;
+    }
+    dequeue_block(bp);
     PUT(HDRP(bp), PACK(prev_size, 1));
     PUT(FTRP(bp), PACK(prev_size, 1));
-    remove_block(bp);
 
     //Spliting
     if(succ_size > 0){
+        // printf("succ_size:%d.\n", succ_size);
+        if(succ_size <= DSIZE){
+            printf("succ_size too small!!!\n");
+        }
+        //printf("spliting %d into %d and %d\n", total_size, asize, succ_size);
         succ_ptr = NEXT_BLKP(bp);
-        //printf("succ_ptr address : %x\n", (int)succ_ptr);
+        ////printf("succ_ptr address : %x\n", (int)succ_ptr);
         PUT(HDRP(succ_ptr), PACK(succ_size, 0));
         PUT(FTRP(succ_ptr), PACK(succ_size, 0));
-        insert_block(succ_ptr);
+        enqueue_block(succ_ptr);
     }
     //gap small than a DWORD not split
 
     return ;
 }
 
-static void *get_last_FB(){
-    char *cur = free_listp;
-    while(*cur != NULL){
-        if(GET_ALLOC(cur) == ALLOCATED)
-            printf("Linked List error at address：0x%x\n", cur);
-        cur = GET(cur);
-    }
-    printf("get_last_free_block: 0x%x\n", cur);
-    return cur;
-}
-
 static void *get_prev_FB(char *bp){
-    if(GET(bp + WSIZE) == free_listp)
-        return free_listp;
+    if(GET(bp + WSIZE) == NULL)
+        return NULL;
     if(GET_ALLOC(HDRP(bp)) == ALLOCATED){
-        printf("ERROR: Request invalid.\n");
+        printf("ERROR: prev_Request invalid. 0x%x\n", bp);
     }
-    printf("get_prev_free_block: 0x%x\n", GET(bp + WSIZE));
+    //printf("get_prev_free_block: 0x%x\n", GET(bp + WSIZE));
     return GET(bp + WSIZE);
 }
 
@@ -326,42 +331,51 @@ static void *get_next_FB(char *bp){
     if(GET(bp) == NULL)
         return NULL;
     if(GET_ALLOC(HDRP(bp)) == ALLOCATED){
-        printf("ERROR: Request invalid.\n");
+        printf("ERROR: next_Request invalid 0x%x.\n", bp);
     }
-    printf("get_next_f_Block: 0x%x\n", GET(bp));
+    //printf("get_next_f_Block: 0x%x\n", GET(bp));
     return GET(bp);
 }
 
-static void insert_block(char *bp){
+static void enqueue_block(char *bp){
     char *cur = free_listp, *next;
-    while(*cur != NULL && ((unsigned int)(*cur) < (unsigned int) (bp))){
-        printf("Cur address is 0x%x\n", cur);
+
+    //printf("INFO: Inserting Block to free_list: 0x%x\n", bp);
+    while(GET(cur) != NULL && ((unsigned int)(GET(cur)) < (unsigned int) (bp))){
+        // printf("Cur address is 0x%x\t bp add = 0x%x\n", cur, bp);
         cur = GET(cur);
     }
     //cur -> pointer to previous-free-block
-    //*cur -> dereference of the pointer, point to the next-free-block
-    //Next pointer
-    PUT(bp, *cur);
+    //GET(cur) -> dereference of the pointer, point to the next-free-block
+    PUT(bp, GET(cur));
     //Prev pointer
-    PUT(bp + WSIZE, cur);
+    //TO-DO: if cur == free_listp should it be NULL?
+    if(cur != free_listp)
+        PUT(bp + WSIZE, cur);
+    else
+        PUT(bp + WSIZE, 0);
     //Prev Block's Next pointer
-    printf("cur address stored data is 0x%x\n", *cur);
-    if((char *)(*cur) != NULL)
-        PUT((*cur + WSIZE), bp);
+    // //printf("cur address stored data is 0x%x\n", *cur);
+    if(GET(cur) != NULL)
+        PUT((GET(cur) + WSIZE), bp);
     PUT(cur, bp);
     //Next Block's Prev pointer
     //Try to avoid null reference
+    return ;
 }
 
-static void remove_block(char *bp){
+static void dequeue_block(char *bp){
     char *next_free = get_next_FB(bp);
     char *prev_free = get_prev_FB(bp);
-    printf("INFO: Removing Block\n next pointer: 0x%x, prev pointer: 0x%x\n", next_free, prev_free);
-    //TO-DO remove original pointer move
-    PUT(prev_free, next_free);
-    // *prev_free = next_free;
+    //printf("INFO: Removing Block :0x%x out of free_list.\n\t next pointer: 0x%x, prev pointer: 0x%x\n", bp, next_free, prev_free);
+    //TO-DO cases: perv_free == NULL, next_free == NULL.
     if(next_free != NULL)
         PUT(next_free + WSIZE, prev_free);
+    if(prev_free == NULL){
+        prev_free = free_listp;
+    }
+    PUT(prev_free, next_free);
+    return ;
 }
 
 //TO-DO: Auto Heap Consistance Detect.
