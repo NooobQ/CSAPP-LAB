@@ -171,19 +171,45 @@ void *mm_realloc(void *ptr, size_t size)
     }
     if(ptr == NULL)
         return mm_malloc(size);
-
+    if(GET_SIZE(HDRP(ptr)) - DSIZE > size)
+        return ptr;
 
     // if(size_diff <= 0)
     //     return ptr;
 
-    size_t size_diff = size - GET_SIZE(HDRP(ptr));
     void *oldptr = ptr;
     void *newptr;
-    size_t copySize, new_size;
+    size_t copySize, new_size, asize;
+    size_t size_diff, next_size, prev_size;
 
+    //copySize size of Block:HEADER FOOTER excluded.
     copySize = GET_SIZE(HDRP(oldptr)) - DSIZE;
-    // copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+    size_diff = ALIGN(size - copySize); //Remember ALIGNMENT
+    next_size = GET_SIZE(HDRP(NEXT_BLKP(ptr))); //Next block's size.
+    prev_size = GET_SIZE(HDRP(PREV_BLKP(ptr))); //prev block's size.
     // printf("CopySize = %d is it equal to %d\n", copySize, GET_SIZE(HDRP(oldptr)) - DSIZE);
+    //Merging with the Next BLOCK
+    if(!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) 
+        // && GET_ALLOC(HDRP(PREV_BLKP(ptr))) 
+        && next_size >= size_diff){
+        dequeue_block(NEXT_BLKP(ptr));
+        // asize = ALIGN(size + DSIZE);
+        //avoid fragment
+        size = next_size - size_diff == DSIZE? 
+            ALIGN(size + 2*DSIZE): ALIGN(size + DSIZE);
+        // printf("Before: size : 0x%x, next_size : 0x%x\n", GET_SIZE(HDRP(ptr)), next_size);
+
+        PUT(HDRP(ptr), PACK(size, 1));
+        PUT(FTRP(ptr), PACK(size, 1));
+        if(next_size - size_diff > DSIZE){
+            next_size -= size_diff;
+            // printf("After: size : 0x%x, next_size : 0x%x\n", size, next_size);
+            PUT(HDRP(NEXT_BLKP(ptr)), PACK(next_size, 0));
+            PUT(FTRP(NEXT_BLKP(ptr)), PACK(next_size, 0));
+            enqueue_block(NEXT_BLKP(ptr));
+        }
+        return ptr;
+    }
     if (size < copySize)
         copySize = size;
     newptr = mm_malloc(size);
