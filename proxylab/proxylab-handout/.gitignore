@@ -6,3 +6,4 @@ core
 *.gzip 
 *.bzip
 *.gz
+tiny/*
