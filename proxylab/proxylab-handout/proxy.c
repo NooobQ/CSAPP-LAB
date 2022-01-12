@@ -12,32 +12,24 @@ static const char *connection_hdr = "Connection: close\r\n";
 static const char *proxy_hdr = "Proxy-Connection: close\r\n";
 
 void parse_url(char *url, char *host, char *port, char *path);
-void *doit(void *vargp);
+void doit(int fd);
 
 int main(int argc, char** argv)
 {
-    int listenfd, port;
-    int connfd;
+    int listenfd, connfd, port;
     struct sockaddr_storage clientaddr;
     socklen_t clientlen;
-    sem_t mutex;
-    pthread_t tid;
 
     if (argc != 2) {
 	fprintf(stderr, "usage: %s <port>\n", argv[0]);
 	exit(1);
     }
 
-    //TO-DO : SIGPIPE Signal catch
-    Sem_init(&mutex, 0, 1);
     listenfd = Open_listenfd(argv[1]);
     while(1){
-        //TO-DO add mutex/sem to RACE CONTROL
-        P(&mutex);
         connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-        Pthread_create(&tid, NULL, doit, &connfd);
-        V(&mutex);
-        // Close(connfd);
+        doit(connfd);
+        Close(connfd);
     }
     printf("%s", user_agent_hdr);
     return 0;
@@ -55,23 +47,22 @@ void parse_url(char *url, char *host, char *port, char *path){
     return ;
 }
 
-//TO-DO: Call by Pthread_create()
-void *doit(void *vargp){
-    int fd = *((int *)vargp);
-    Pthread_detach(Pthread_self());
+void doit(int fd){
     rio_t rio, s_rio;
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE],
         host[MAXLINE], path[MAXLINE], port[MAXLINE];
+    // int port;
+
 
     //Read HTTP Request
     Rio_readinitb(&rio, fd);
     if (!Rio_readlineb(&rio, buf, MAXLINE))  //line:netp:doit:readrequest
-        return NULL;
+        return;
     printf("%s", buf);
     sscanf(buf, "%s %s %s", method, uri, version);       //line:netp:doit:parserequest
     if (strcasecmp(method, "GET")) {                     //line:netp:doit:beginrequesterr
         printf("Error: Method Not Implement.\n");
-        return NULL;
+        return ;
     }
     // parse_url(uri, host, &port, path);
     parse_url(uri, host, port, path);
@@ -84,14 +75,14 @@ void *doit(void *vargp){
     }
 
     //Proxy
-    struct hostent *hptr;//Not used
+    struct hostent *hptr;
     int server_connfd;
-
+    // char port_string[MAXLINE];
     if((hptr = Gethostbyname(host))==NULL){
-        return NULL;
+        return;
     }
     if((server_connfd = Open_clientfd(host, port)) <= 0){
-        return NULL;
+        return;
     }
     printf("Info: Remote server detected.\n");
 
@@ -100,27 +91,26 @@ void *doit(void *vargp){
     //module it to a function.
     sprintf(buf, "%s %s HTTP/1.0\r\n", method, path);
     Rio_writen(server_connfd, buf, strlen(buf));
-    Rio_writen(server_connfd, connection_hdr, strlen(connection_hdr));
+    // Rio_writen(server_connfd, method, strlen(method));
+    // Rio_writen(server_connfd, " ", 1);
+    // Rio_writen(server_connfd, path, strlen(path));
+    // Rio_writen(server_connfd, " HTTP/1.0\r\n", 11);
+    Rio_writen(server_connfd, user_agent_hdr, strlen(user_agent_hdr));
     sprintf(buf, "Host: %s\r\n", host);
     Rio_writen(server_connfd, buf, strlen(buf));
     Rio_writen(server_connfd, proxy_hdr, strlen(proxy_hdr));
-    Rio_writen(server_connfd, user_agent_hdr, strlen(user_agent_hdr));
-    //TO-DO: Other addition request additional request headers
+    Rio_writen(server_connfd, connection_hdr, strlen(connection_hdr));
     Rio_writen(server_connfd, "\r\n", 2);
+    //TO-DO: Other addition request additional request headers
 
     printf("Info: sending request ended.\n");
 
-    //Read Response & forwards it
-    int len;
-    while((len = Rio_readlineb(&s_rio, buf, MAXLINE)) > 0){
-        Rio_writen(fd, buf, len);
-        printf("Sending %d Bytes: %s", len, buf);
+    while(Rio_readlineb(&s_rio, buf, MAXLINE) > 0){
+        Rio_writen(fd, buf, strlen(buf));
+        printf("%s", buf);
     }
 
     printf("Info: Received Response.\n");
 
     Close(server_connfd);
-    Close(fd);
-
-    return NULL;
 }
